@@ -27,14 +27,50 @@ case "$cmd" in
     exec "$PY" "$ROOT/apply_mirror.py" --steam-dir "$STEAM_DIR" "$@"
     ;;
   force-sep2024)
-    exec "$PY" "$ROOT/force_sep2024.py" --steam-dir "$STEAM_DIR" "$@"
+    YES=()
+    if [ "${1:-}" = -y ]; then YES=(--yes); shift; fi
+    exec "$PY" "$ROOT/force_sep2024.py" --steam-dir "$STEAM_DIR" "${YES[@]}" "$@"
     ;;
   sync-steam)
+    VER="${1:-1726088054}"
     exec "$PY" -c "
 from pathlib import Path
 from force_sep2024 import sync_steam_executable
-sync_steam_executable(Path('$STEAM_DIR'), Path('$CACHE/1726088054'))
+sync_steam_executable(Path('$STEAM_DIR'), Path('$CACHE/$VER'))
 " "$@"
+    ;;
+  status)
+    exec "$PY" "$ROOT/status.py" --steam-dir "$STEAM_DIR" "$@"
+    ;;
+  list-cache)
+    shopt -s nullglob
+    for m in "$CACHE"/*/steam_client_ubuntu12.manifest; do
+      "$PY" -c "from pathlib import Path; from steam_manifest import load_manifest; p=Path('$m'); _,v,_=load_manifest(p); print(f'{v}\t{p.parent}')"
+    done
+    ;;
+  force-wayback)
+    YES=()
+    if [ "${1:-}" = -y ]; then YES=(--yes); shift; fi
+    DATE="${1:?wayback timestamp e.g. 20241107150153}"
+    shift
+    MAN="${1:-steam_client_ubuntu12}"
+    shift || true
+    echo "=== Fetch $MAN from Wayback $DATE ==="
+    "$PY" "$ROOT/fetch.py" --cache "$CACHE" --wayback-date "$DATE" --manifest "$MAN" --jobs 6 "$@"
+    VER=$("$PY" -c "
+from pathlib import Path
+from steam_manifest import load_manifest
+import sys
+ms=sorted(Path('$CACHE').glob('*/${MAN}.manifest'), key=lambda p: p.stat().st_mtime)
+if not ms: sys.exit('no manifest in cache')
+_, v, _ = load_manifest(ms[-1])
+print(v)
+")
+    echo "=== Destructive install cache/$VER (stop Steam if running) ==="
+    EXTRA=()
+    if [ -n "${OVERLAY_MD5:-}" ]; then EXTRA+=(--overlay-md5 "$OVERLAY_MD5"); fi
+    exec "$PY" "$ROOT/force_sep2024.py" --steam-dir "$STEAM_DIR" \
+      --cache-version-dir "$CACHE/$VER" --manifest-basename "$MAN" "${YES[@]}" "${EXTRA[@]}"
     ;;
   lock-updates)
     cat >"$STEAM_DIR/steam.cfg" <<'EOF'
@@ -77,23 +113,38 @@ print(v)
     ;;
   restore-current)
     rm -f "$STEAM_DIR/steam.cfg" "$STEAM_DIR/../steam/steam.cfg" 2>/dev/null || true
-    echo "Removed steam.cfg. Run:"
-    echo "  steam -forcesteamupdate -forcepackagedownload -exitsteam"
+    rm -f "$STEAM_DIR/.steam-enable-steamrt64-client" 2>/dev/null || true
+    cat <<EOF
+Removed update lock (steam.cfg). To pull the current client from Valve:
+
+  1. Quit Steam completely (do not use ./sep-steam).
+  2. Run once:
+       steam -forcesteamupdate -forcepackagedownload -exitsteam
+  3. Start Steam normally: /usr/games/steam  (or your desktop launcher)
+
+Steam will re-download packages and restore steamrt64/ if your bootstrap expects it.
+If update fails or the client is broken, restore from a backup:
+  ls -dt ~/.steam/client_backup_* ~/.steam/debian-installation/package_backup_* 2>/dev/null | head -3
+See README.md § Restore to latest Steam.
+EOF
     ;;
   help|*)
     cat <<EOF
 steam_downgrader — manual downgrade toolkit (see README.md)
 
+  ./downgrade status                    Show build, overlay md5, running Steam
+  ./downgrade list-cache                List cached build ids under cache/
   ./downgrade verify-wayback [date]     Check archive has manifest names
   ./downgrade fetch --wayback-date TS --manifest steam_client_ubuntu12
-  ./downgrade force-sep2024              Destructive Sep 2024 install
-  ./downgrade sync-steam                 Fix ubuntu12_32/steam from cache
+  ./downgrade force-wayback [-y] TS [manifest]   Fetch Wayback + destructive install
+  ./downgrade force-sep2024 [-y]         Sep 2024 preset (cache 1726088054)
+  ./downgrade sync-steam [buildid]       Fix ubuntu12_32/steam from cache
   ./downgrade sep-2024                 Preset: Sep 2024 ubuntu12 fetch+install
   ./downgrade install --cache-version-dir cache/VERSION --manifest-basename NAME
   ./downgrade activate-pending          Before launch: drop steam.cfg, quarantine steamrt64
   ./downgrade lock-updates              After downgrade succeeded
   ./downgrade mirror --cache-version-dir cache/VERSION --port 8765
-  ./downgrade restore-current          Remove steam.cfg + print update command
+  ./downgrade restore-current          Unlock updates + print restore steps
 
 Env: STEAM_DIR (default ~/.steam/debian-installation)
 EOF

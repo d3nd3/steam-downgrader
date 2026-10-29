@@ -2,5 +2,7 @@ __pycache__/
 *.py[cod]
 cache/
 package_backup_*/
+sep-steam
+# Local Wayback blobs (~500MB/build); may reflect your download history
 .venv/
 venv/

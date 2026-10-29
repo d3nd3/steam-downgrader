@@ -88,6 +88,9 @@ def fetch_artifacts(
                 fail += 1
                 print(f"FAIL {name}: {status}", file=sys.stderr)
     print(f"done: ok={ok} skip={skip} fail={fail} total={len(artifacts)}")
+    if fail:
+        raise SystemExit(1)
+    print(f"cache ready: {out_dir}")
 
 
 def main() -> None:

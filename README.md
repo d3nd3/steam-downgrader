@@ -1,83 +1,181 @@
 # steam-downgrader
 
-> **Warning — read before running anything**
->
-> This tool **permanently replaces large parts of your Steam client** under `~/.steam/debian-installation` (or `$STEAM_DIR`). It deletes modern client trees (`steamrt64/`, `ubuntu12_*`, UI assets, `package/`, configs) and reinstalls an old build. **Your games in `steamapps/` are not removed**, but Steam may not launch correctly until you restore.
->
-> - **Quit Steam completely** before `./downgrade force-sep2024` (including tray/background).
-> - **`force-sep2024` is destructive** — only client dirs are copied to `client_backup_*`; if backup or restore fails, you may need a full Steam reinstall.
-> - While downgraded, **start Steam only with `./sep-steam`**. Launching `/usr/games/steam` normally can pull the current client again or leave a broken mix of versions.
-> - To return to the current client: `./downgrade restore-current` then `steam -forcesteamupdate …` (see below). Until then, expect failed logins, crashes, or missing features.
-> - **Use at your own risk.** Intended for developers and overlay/regression work, not everyday gaming on your only Steam install.
+Install an **older Linux Steam client** from the [Internet Archive Wayback Machine](https://web.archive.org/) (or SteamTracking) into `~/.steam/debian-installation`. Typical use: reproduce overlay bugs on a known build, then restore the current client.
 
-Linux toolkit to install a **Sep 2024** Steam client (`buildid` **1726088054**) from Wayback or SteamTracking — useful when you need the pre–SteamRT3 **`ubuntu12_32`** tree (overlay research, regression tests).
+> **Read this first**
+>
+> - **Quit Steam completely** (tray icon too) before any `force-*` command. Check with `./downgrade status`.
+> - **`force-wayback` / `force-sep2024` replace most of the client** under `~/.steam/debian-installation`. **`steamapps/` (your games) are kept**, but backups only cover client trees (`client_backup_*`). If something goes wrong, use **Restore to latest Steam** below.
+> - While downgraded, **always start with `./sep-steam`** (generated in this repo after install), not `/usr/games/steam` alone.
+> - **At your own risk.** For developers and regression testing.
 
-## Install
+## Requirements
+
+- Linux with Steam installed once (`/usr/games/steam`, `~/.steam/debian-installation`)
+- **Python 3.10+**
+- Network on first fetch (large download into `cache/` — not committed to git)
 
 ```bash
 git clone https://github.com/d3nd3/steam-downgrader.git
 cd steam-downgrader
+chmod +x downgrade
 ```
 
-Requires **Python 3.10+**, `/usr/games/steam`, and a normal install under `~/.steam/debian-installation`.
+---
 
-## Quick start (Sep 2024)
+## Step-by-step: install from a Wayback snapshot
+
+Archive URL shape:  
+`http://web.archive.org/web/<TIMESTAMP>if_/media.steampowered.com/client`
+
+| Step | What to do |
+|------|------------|
+| 1 | Quit Steam (tray too). `./downgrade status` — **Steam processes** should be **none**. |
+| 2 | Optional: `./downgrade verify-wayback <TIMESTAMP>` — want **302** (or success) for **`steam_client_ubuntu12`**. **`steam_client_steamrt64`** is often **404** on Archive; this tool still works via the ubuntu12 track + `./sep-steam`. |
+| 3 | Fetch + install: `./downgrade force-wayback [-y] <TIMESTAMP> steam_client_ubuntu12` (type **`yes`** when prompted unless **`-y`**). |
+| 4 | Start: **`./sep-steam`** |
+| 5 | Confirm: **`./downgrade status`** — build id, overlay md5, **`steamrt64: no`**. |
+
+Non-interactive: **`./downgrade force-wayback -y …`** or **`STEAM_DOWNGRADER_YES=1`**.
+
+Optional: pin a **64-bit overlay** md5 after install (matches `~/.steam/bin64` → `ubuntu12_64`):
 
 ```bash
-./downgrade fetch --wayback-date 20240913122103 --manifest steam_client_ubuntu12
+OVERLAY_MD5=b1e3ee47e947a4fff8a10df99ee26aa3 \
+  ./downgrade force-wayback -y 20241107150153 steam_client_ubuntu12
+# same flag on reinstall from cache:
+./downgrade force-sep2024 -y --cache-version-dir cache/1730853027 \
+  --overlay-md5 b1e3ee47e947a4fff8a10df99ee26aa3
+```
+
+---
+
+## Wayback timestamp ≠ same build on nearby dates
+
+Each Archive snapshot has its own **`"version"` build id** in the manifest. **Do not assume** “September 2024” is one build.
+
+| Wayback timestamp | Manifest build | Notes |
+|-------------------|----------------|--------|
+| **`20240911122103`** | **`1726088054`** | Sep **11** — common “Sep 2024” research / working overlay era |
+| **`20240913122103`** | **`1726604483`** | Sep **13** — *different* client, not `1726088054` |
+| **`20240717082107`** | **`1721173382`** | Jul 17, 2024 |
+| **`20241107150153`** | **`1730853027`** | Nov 7, 2024 (example overlay md5 `b1e3ee47…` on `ubuntu12_64`) |
+
+To see what a snapshot would fetch **without** downloading blobs, only the manifest:
+
+```bash
+./downgrade fetch --wayback-date 20240911122103 --manifest steam_client_ubuntu12
+# prints version=… and fills cache/<buildid>/ (re-run with existing cache skips blobs)
+```
+
+---
+
+## Switch to another version you already downloaded
+
+No need to hit Archive again if `cache/<buildid>/` is complete.
+
+```bash
+./downgrade list-cache
 # quit Steam first
-./downgrade force-sep2024
+./downgrade force-sep2024 -y --cache-version-dir cache/1730853027   # Nov 7 example
+./sep-steam
+
+./downgrade force-sep2024 -y --cache-version-dir cache/1726088054   # Sep 11 example
 ./sep-steam
 ```
 
-Or fetch via SteamTracking date (build may differ from Wayback — see [REFERENCES.md](REFERENCES.md)):
+Plain **`./downgrade force-sep2024`** (no args) installs only from **`cache/1726088054/`** — fetch that build first if the folder is missing.
+
+---
+
+## Preset: Sep 11, 2024 build `1726088054`
+
+Use the **Sep 11** snapshot (not Sep 13):
+
+```bash
+./downgrade force-wayback 20240911122103 steam_client_ubuntu12
+./sep-steam
+```
+
+If **`cache/1726088054/`** already exists (from a prior fetch or copied from another machine):
+
+```bash
+./downgrade force-sep2024 -y
+./sep-steam
+```
+
+SteamTracking by calendar date can differ from Wayback — see [REFERENCES.md](REFERENCES.md):
 
 ```bash
 ./downgrade fetch-by-date 2024-09-13
-./downgrade force-sep2024
-./sep-steam
+./downgrade list-cache
+./downgrade force-sep2024 -y --cache-version-dir cache/<buildid-from-list>
 ```
 
-**Start Steam only with `./sep-steam`** while downgraded. It sets `STEAM_FORCE_CLIENT=ubuntu12_32` so the launcher does not pick **steamrt64** (2026 client).
+---
 
-## What `force-sep2024` does
+## Copy `cache/` from another clone or PC
 
-1. Backs up client dirs under `~/.steam/client_backup_*` (not `steamapps/`)
-2. Wipes `steamrt64/`, `ubuntu12_*`, UI trees, etc. (`nuke_client.py`)
-3. Re-bootstrap from `bootstrap.tar.xz`, stages `package/` from `cache/1726088054/`, force-extract via local mirror
-4. **`sync_steam_executable`** — replaces `ubuntu12_32/steam` from **`steam_ubuntu12.zip.vz`** (Debian bootstrap often ships a **2025 stub** that segfaults against Sep libs)
-5. Writes `steam.cfg`, creates **`./sep-steam`**
-
-## Verification
-
-- `package/steam_client_ubuntu12.manifest` contains `"version" "1726088054"`
-- `ubuntu12_32/gameoverlayrenderer.so` mtime in **2024**
-- No `steamrt64/` before launch
-- Optional: set `STEAM_DOWNGRADER_WORKING_CLIENT=/path/to/steamclient.so` to SHA256-check `linux64/steamclient.so`
-
-If verify warns the bootstrap stub is still in place:
+`cache/` is ~500 MB per build and is **gitignored**. To avoid re-downloading from Archive:
 
 ```bash
-./downgrade sync-steam
+rsync -a /path/to/other/steam-downgrader/cache/1726088054/ ./cache/1726088054/
+./downgrade force-sep2024 -y --cache-version-dir cache/1726088054
 ```
 
-## Restore current client
+---
 
-```bash
-./downgrade restore-current
-steam -forcesteamupdate -forcepackagedownload -exitsteam
-```
+## Restore to latest Steam
+
+| Step | Action |
+|------|--------|
+| 1 | **Quit Steam** (do not use `./sep-steam`). |
+| 2 | **`./downgrade restore-current`** |
+| 3 | **`steam -forcesteamupdate -forcepackagedownload -exitsteam`** |
+| 4 | **`/usr/games/steam`** (normal launcher). |
+
+Check: **`./downgrade status`**. If update fails, see **`ls -dt ~/.steam/client_backup_*`** or reinstall the distro **`steam`** package, then repeat step 3. **`steamapps/`** are not removed by this tool.
+
+---
+
+## Troubleshooting
+
+| Problem | Fix |
+|---------|-----|
+| Steam still running | Quit all Steam; `./downgrade status` |
+| Crash / assert on startup | `./downgrade sync-steam <buildid>` then `./sep-steam` |
+| Wrong build after `force-wayback` | Wrong timestamp — see table above; reinstall with correct `cache/<buildid>` |
+| Wrong overlay md5 | Reinstall with `--overlay-md5 …` or `OVERLAY_MD5=…` on `force-wayback` |
+| Re-verify without wipe | `./downgrade force-sep2024 --skip-extract --cache-version-dir cache/<buildid>` |
+
+---
 
 ## Commands
 
 | Command | Purpose |
 |---------|---------|
-| `./downgrade fetch …` | Download manifest + blobs into `cache/` |
-| `./downgrade force-sep2024` | Destructive Sep 2024 install |
-| `./downgrade sync-steam` | Fix `ubuntu12_32/steam` from cache only |
-| `./downgrade lock-updates` | Write `steam.cfg` |
-| `./downgrade restore-current` | Remove lock + print update flags |
+| `./downgrade status` | Build id, overlay md5, `steam.cfg`, running processes |
+| `./downgrade list-cache` | Build ids under `cache/` |
+| `./downgrade force-wayback [-y] TS [manifest]` | Fetch + full install |
+| `./downgrade force-sep2024 [-y] [--cache-version-dir cache/BUILD]` | Install from cache (default `1726088054`) |
+| `./downgrade fetch --wayback-date TS --manifest …` | Download only |
+| `./downgrade sync-steam [buildid]` | Fix `ubuntu12_32/steam` from cache |
+| `./downgrade verify-wayback TS` | Probe Archive URLs |
+| `./downgrade restore-current` | Unlock updates + restore instructions |
 
-Env: **`STEAM_DIR`** (default `~/.steam/debian-installation`).
+**Flags (Python entrypoints):** `--cache-version-dir`, `--manifest-basename`, `--overlay-md5`, `--skip-extract`, `-y` / `--yes`.
 
-See **[REFERENCES.md](REFERENCES.md)** for related public downgrade recipes.
+**Environment:** `STEAM_DIR`, `OVERLAY_MD5`, `STEAM_DOWNGRADER_YES=1`, `STEAM_DOWNGRADER_WORKING_CLIENT`.
+
+---
+
+## What a full install does
+
+1. Backup → `client_backup_*`
+2. Wipe client trees (`steamrt64/`, `ubuntu12_*`, UI, …)
+3. Bootstrap + stage `package/` from `cache/<buildid>/`
+4. Local mirror extract (same idea as `-overridepackageurl` + `-forcepackagedownload`)
+5. Sync real **`ubuntu12_32/steam`** from `steam_ubuntu12.zip.vz`
+6. Write **`steam.cfg`**, create **`./sep-steam`**
+
+More context: [REFERENCES.md](REFERENCES.md).

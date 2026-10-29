@@ -10,9 +10,10 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-WORKING_CLIENT = ROOT.parent / "working_steamclient.so"
+_wc = __import__("os").environ.get("STEAM_DOWNGRADER_WORKING_CLIENT", "").strip()
+WORKING_CLIENT = Path(_wc) if _wc else None
 CACHE_VER = ROOT / "cache" / "1726088054"
-MANIFEST = "steam_client_ubuntu12.manifest"
+DEFAULT_MANIFEST_BASENAME = "steam_client_ubuntu12"
 PORT = 8765
 MIRROR_URL = f"http://127.0.0.1:{PORT}/client"
 STEAM_CFG = """BootStrapperInhibitAll=enable
@@ -27,10 +28,10 @@ def lock_updates(steam_dir: Path) -> None:
     print(f"wrote {cfg}")
 
 
-def pin_package_state(steam_dir: Path, cache_dir: Path) -> None:
+def pin_package_state(steam_dir: Path, cache_dir: Path, manifest_name: str) -> None:
     """Keep ubuntu12 track consistent so the next launch does not hit Fastly."""
     pkg = steam_dir / "package"
-    src_manifest = cache_dir / MANIFEST
+    src_manifest = cache_dir / manifest_name
     shutil.copy2(src_manifest, pkg / "steam_client_ubuntu12.manifest")
     shutil.copy2(src_manifest, pkg / "steam_client_steamrt64.manifest")
     rt = pkg / "steam_client_steamrt64.installed"
@@ -46,13 +47,18 @@ def pin_package_state(steam_dir: Path, cache_dir: Path) -> None:
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="Downgrade via mirror (Sep 2024 ubuntu12 cache)")
+    p = argparse.ArgumentParser(description="Downgrade via mirror (local cache + force update)")
     p.add_argument("--steam-dir", type=Path, default=Path.home() / ".steam/debian-installation")
     p.add_argument("--cache-version-dir", type=Path, default=CACHE_VER)
+    p.add_argument("--manifest-basename", default=DEFAULT_MANIFEST_BASENAME)
     p.add_argument("--launcher", type=Path, default=DEFAULT_LAUNCHER)
     p.add_argument("--port", type=int, default=PORT)
     p.add_argument("--reset-package", action="store_true", help="wipe conflicting package blobs first")
     args = p.parse_args()
+    manifest_name = f"{args.manifest_basename}.manifest"
+    from steam_manifest import load_manifest
+
+    _, expected_build, _ = load_manifest(args.cache_version_dir / manifest_name)
     steam_bin = args.steam_dir / "ubuntu12_32/steam"
     log = args.steam_dir / "logs/bootstrap_log.txt"
     if not steam_bin.is_file():
@@ -78,9 +84,9 @@ def main() -> None:
             "--port",
             str(args.port),
             "--alias-steamrt64-from",
-            MANIFEST,
+            manifest_name,
             "--alias-ubuntu12-from",
-            MANIFEST,
+            manifest_name,
         ],
         cwd=ROOT,
     )
@@ -103,12 +109,12 @@ def main() -> None:
 
     text = log.read_text(encoding="utf-8", errors="replace").splitlines()
     tail = text[lines_before:]
-    ok = any("1726088054" in ln for ln in tail) and any("Update complete" in ln for ln in tail)
+    ok = any(expected_build in ln for ln in tail) and any("Update complete" in ln for ln in tail)
     if not ok:
         raise SystemExit("downgrade did not finish — see bootstrap_log.txt")
-    pin_package_state(args.steam_dir, args.cache_version_dir)
+    pin_package_state(args.steam_dir, args.cache_version_dir, manifest_name)
     client = args.steam_dir / "linux64/steamclient.so"
-    if WORKING_CLIENT.is_file() and client.is_file():
+    if WORKING_CLIENT and WORKING_CLIENT.is_file() and client.is_file():
         import hashlib
 
         def sha(p: Path) -> str:
@@ -120,7 +126,8 @@ def main() -> None:
 
         if sha(client) != sha(WORKING_CLIENT):
             raise SystemExit("extract did not deploy working-era steamclient.so")
-    print("OK: linux64/steamclient.so matches working specimen")
+        print("OK: linux64/steamclient.so matches STEAM_DOWNGRADER_WORKING_CLIENT")
+    print(f"OK: client extract build {expected_build}")
     print("Launch with: ./sep-steam   (not plain /usr/games/steam unless STEAM_FORCE_CLIENT=ubuntu12_32)")
 
 

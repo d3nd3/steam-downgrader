@@ -17,15 +17,12 @@ Notes on public recipes we aligned with (or differ from) in this toolkit.
 - **Repo:** [rares478/Steam-Downgrader](https://github.com/rares478/Steam-Downgrader)
 - **Linux equivalent:** `./downgrade fetch-by-date YYYY-MM-DD`, `nuke_client.py`, Fastly CDN fetch in `fetch_steamtracking.py`
 
-SteamTracking **2024-09-13** → build **`1726256783`**; Wayback **`20240913122103`** → **`1726088054`** (what `force-sep2024` targets).
-
----
-
-## This toolkit map
+SteamTracking **2024-09-13** → build **`1726256783`** (typical); Wayback **`20240913122103`** → **`1726604483`**.  
+Sep **11** Wayback **`20240911122103`** → **`1726088054`** (what `force-sep2024` defaults to in `cache/`).
 
 | Goal | Command |
 |------|---------|
-| Fetch Sep-era ubuntu12 (SteamTracking) | `./downgrade fetch-by-date 2024-09-13` |
-| Fetch from Wayback | `./downgrade fetch --wayback-date 20240913122103 --manifest steam_client_ubuntu12` |
-| Destructive install + lock | `./downgrade force-sep2024` |
-| Launch (no steamrt64) | `./sep-steam` |
+| Fetch Sep **11** ubuntu12 (Wayback) | `./downgrade force-wayback 20240911122103` or fetch only with same date |
+| Fetch Sep **13** (different build) | `./downgrade force-wayback 20240913122103` |
+| Install cached build only | `./downgrade force-sep2024 -y --cache-version-dir cache/<buildid>` |
+| Switch Nov 7 build | `cache/1730853027` + `force-sep2024 -y --cache-version-dir …` |
