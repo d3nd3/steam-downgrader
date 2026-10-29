@@ -122,8 +122,8 @@ def verify(
     ver = (steam_dir / f"package/{manifest_basename}.manifest").read_text(encoding="utf-8", errors="replace")
     if expected_build not in ver:
         raise SystemExit(f"manifest missing build {expected_build}")
-    if (steam_dir / "steamrt64").is_dir():
-        raise SystemExit("remove steamrt64/ before launch")
+    if (steam_dir / "steamrt64/steam").is_file():
+        raise SystemExit("remove steamrt64/steam before launch (use sep-steam)")
     bootstrap = steam_dir / "bootstrap.tar.xz"
     if bootstrap.is_file():
         import tarfile
@@ -141,6 +141,25 @@ def verify(
                 "Run sync_steam_executable or re-run force-sep2024 after fix."
             )
     print(f"OK: client build {expected_build}, overlay + steamclient verified")
+
+
+def remove_steamrt64_client(steam_dir: Path) -> None:
+    """Drop steamrt64 game client; keep steam-runtime-steamrt for CEF (2025+ webhelper)."""
+    rt = steam_dir / "steamrt64"
+    if not rt.is_dir():
+        return
+    runtime = rt / "steam-runtime-steamrt"
+    preserved = steam_dir / ".preserve_steam_runtime_steamrt"
+    if runtime.is_dir():
+        shutil.rmtree(preserved, ignore_errors=True)
+        shutil.move(str(runtime), str(preserved))
+    shutil.rmtree(rt)
+    if preserved.is_dir():
+        rt.mkdir(parents=True, exist_ok=True)
+        shutil.move(str(preserved), str(runtime))
+        print("trimmed steamrt64/ (kept steam-runtime-steamrt for steamwebhelper)")
+    else:
+        print("removed steamrt64/ after extract")
 
 
 def write_sep_launcher(steam_dir: Path) -> None:
@@ -211,6 +230,7 @@ def main() -> None:
     args = p.parse_args()
     if not args.cache_version_dir.is_dir():
         raise SystemExit(f"fetch cache first: {args.cache_version_dir}")
+    require_cache_complete(args.cache_version_dir, args.manifest_basename)
     manifest_name = f"{args.manifest_basename}.manifest"
     manifest_path = args.cache_version_dir / manifest_name
     if not manifest_path.is_file():
@@ -236,7 +256,6 @@ def main() -> None:
 
     subprocess.run([sys.executable, str(ROOT / "nuke_client.py"), "--steam-dir", str(args.steam_dir)], check=True)
     install_bootstrap(args.steam_dir)
-    lock(args.steam_dir)
     subprocess.run(
         [
             sys.executable,
@@ -271,10 +290,7 @@ def main() -> None:
         )
 
     # apply_mirror may leave steamrt64; remove again and re-verify ubuntu12 tree
-    rt = args.steam_dir / "steamrt64"
-    if rt.is_dir():
-        shutil.rmtree(rt)
-        print("removed steamrt64/ after extract")
+    remove_steamrt64_client(args.steam_dir)
     rt32 = args.steam_dir / "steamrt32"
     if rt32.is_dir():
         shutil.rmtree(rt32)

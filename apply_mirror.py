@@ -72,7 +72,9 @@ def main() -> None:
             check=True,
         )
 
-    lock_updates(args.steam_dir)
+    cfg = args.steam_dir / "steam.cfg"
+    cfg.unlink(missing_ok=True)
+    (args.steam_dir.parent / "steam" / "steam.cfg").unlink(missing_ok=True)
     lines_before = log.read_text(encoding="utf-8", errors="replace").count("\n") if log.is_file() else 0
 
     mirror = subprocess.Popen(
@@ -112,6 +114,7 @@ def main() -> None:
     ok = any(expected_build in ln for ln in tail) and any("Update complete" in ln for ln in tail)
     if not ok:
         raise SystemExit("downgrade did not finish — see bootstrap_log.txt")
+    lock_updates(args.steam_dir)
     pin_package_state(args.steam_dir, args.cache_version_dir, manifest_name)
     client = args.steam_dir / "linux64/steamclient.so"
     if WORKING_CLIENT and WORKING_CLIENT.is_file() and client.is_file():

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -19,12 +20,26 @@ def client_url(base: str, name: str) -> str:
     return f"{base.rstrip('/')}/{name}"
 
 
-def download(url: str, dest: Path, timeout: int = 120) -> None:
+def download(url: str, dest: Path, timeout: int = 120, retries: int = 3) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
-    req = urllib.request.Request(url, headers={"User-Agent": "steam_downgrader/1.0"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        data = resp.read()
-    dest.write_bytes(data)
+    last: Exception | None = None
+    for attempt in range(retries):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "steam_downgrader/1.0"})
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
+                dest.write_bytes(resp.read())
+            return
+        except urllib.error.HTTPError as e:
+            if e.code in (404, 410, 403):
+                raise
+            last = e
+            if attempt + 1 < retries:
+                time.sleep(2 + attempt * 2)
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            last = e
+            if attempt + 1 < retries:
+                time.sleep(2 + attempt * 2)
+    raise last  # type: ignore[misc]
 
 
 def fetch_manifest(base: str, manifest_name: str, cache_dir: Path) -> Path:
@@ -52,6 +67,7 @@ def fetch_artifacts(
     jobs: int,
     skip_existing: bool,
     verify: bool,
+    retries: int = 3,
 ) -> None:
     _, version, artifacts = load_manifest(manifest_path)
     out_dir = manifest_path.parent
@@ -66,7 +82,7 @@ def fetch_artifacts(
                 return art.name, "skip"
         url = client_url(base, art.name)
         try:
-            download(url, dest)
+            download(url, dest, retries=retries)
         except urllib.error.HTTPError as e:
             return art.name, f"HTTP {e.code}"
         except OSError as e:
@@ -98,6 +114,7 @@ def main() -> None:
     p.add_argument("--manifest", default="steam_client_ubuntu12", help="manifest basename")
     p.add_argument("--cache", type=Path, default=Path(__file__).resolve().parent / "cache")
     p.add_argument("--jobs", type=int, default=4)
+    p.add_argument("--retries", type=int, default=3, help="per-URL retries on transient errors")
     p.add_argument("--no-verify-sha", action="store_true")
     p.add_argument("--skip-existing", action="store_true", default=True)
     src = p.add_mutually_exclusive_group(required=True)
@@ -118,6 +135,7 @@ def main() -> None:
         args.jobs,
         args.skip_existing,
         verify=not args.no_verify_sha,
+        retries=args.retries,
     )
 
 

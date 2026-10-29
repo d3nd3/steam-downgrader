@@ -61,6 +61,28 @@ def load_manifest(path: Path) -> tuple[str, str, list[Artifact]]:
     return parse_manifest(path.read_text(encoding="utf-8", errors="replace"))
 
 
+def cache_missing_artifacts(cache_version_dir: Path, manifest_basename: str = "steam_client_ubuntu12") -> list[str]:
+    manifest_path = cache_version_dir / f"{manifest_basename}.manifest"
+    if not manifest_path.is_file():
+        return [f"missing {manifest_path.name}"]
+    _, _, artifacts = load_manifest(manifest_path)
+    missing: list[str] = []
+    for art in artifacts:
+        p = cache_version_dir / art.name
+        if not p.is_file() or p.stat().st_size == 0:
+            missing.append(art.name)
+    return missing
+
+
+def require_cache_complete(cache_version_dir: Path, manifest_basename: str = "steam_client_ubuntu12") -> None:
+    missing = cache_missing_artifacts(cache_version_dir, manifest_basename)
+    if missing:
+        raise SystemExit(
+            f"incomplete cache {cache_version_dir} ({len(missing)} missing blobs). "
+            f"Re-run fetch or ./downgrade fetch-by-date YYYY-MM-DD. First missing: {missing[0]}"
+        )
+
+
 def verify_sha256(path: Path, expected: str | None) -> bool:
     if not expected:
         return True

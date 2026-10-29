@@ -60,12 +60,60 @@ Each Archive snapshot has its own **`"version"` build id** in the manifest. **Do
 | **`20240913122103`** | **`1726604483`** | Sep **13** — *different* client, not `1726088054` |
 | **`20240717082107`** | **`1721173382`** | Jul 17, 2024 |
 | **`20241107150153`** | **`1730853027`** | Nov 7, 2024 (example overlay md5 `b1e3ee47…` on `ubuntu12_64`) |
+| **`20250413062507`** | **`1743554648`** | Apr 13, 2025 — Archive often **404** on blobs; use **`fetch-smart`** / **`force-wayback`** (Fastly fallback) |
+| **`20250829215427`** | **`1757452101`** | Aug **29**, 2025 |
 
 To see what a snapshot would fetch **without** downloading blobs, only the manifest:
 
 ```bash
 ./downgrade fetch --wayback-date 20240911122103 --manifest steam_client_ubuntu12
 # prints version=… and fills cache/<buildid>/ (re-run with existing cache skips blobs)
+```
+
+---
+
+## Fetch and install (`force-wayback`)
+
+**`./downgrade force-wayback`** uses **`fetch-smart`**: try Archive first, then if blobs are missing, fill the same build from **SteamTracking + Fastly** using the calendar date parsed from the Wayback timestamp (`20250413062507` → `2025-04-13`).
+
+```bash
+./downgrade force-wayback -y 20250413062507 steam_client_ubuntu12
+./sep-steam
+```
+
+Override the fallback date if needed:
+
+```bash
+./downgrade fetch-smart --wayback-date 20250413062507 --calendar-date 2025-04-13
+```
+
+**Install never runs on an incomplete cache** — `force-sep2024` checks every blob exists before wiping client dirs.
+
+Manual two-step flow:
+
+```bash
+./downgrade fetch-smart --wayback-date 20250829215427
+./downgrade force-sep2024 -y --cache-version-dir cache/1757452101
+./sep-steam
+```
+
+---
+
+## Incomplete Wayback downloads
+
+Archive may return **`Connection refused`**, **404**, or rate limits. **`fetch`** retries transient errors (**`--retries 3`**, default).
+
+| Situation | What to do |
+|-----------|------------|
+| **`fetch`** shows **`fail=N`** | Re-run the same command, or use **`fetch-smart`** / **`force-wayback`** (CDN fallback) |
+| **`fetch-by-date 2025-04-13`** | Same manifest era from SteamTracking when Archive lacks blobs |
+| **`./downgrade status`** | Lists each **`cache/<build>`** as **complete** or **INCOMPLETE (N missing)** |
+
+Wayback-only (no CDN fallback):
+
+```bash
+./downgrade fetch --wayback-date 20250829215427 --manifest steam_client_ubuntu12 --jobs 4
+# repeat until fail=0
 ```
 
 ---
@@ -143,10 +191,13 @@ Check: **`./downgrade status`**. If update fails, see **`ls -dt ~/.steam/client_
 | Problem | Fix |
 |---------|-----|
 | Steam still running | Quit all Steam; `./downgrade status` |
+| **`steamwebhelper` / steamrt runtime error** | Newer clients need **`steamrt64/steam-runtime-steamrt/_v2-entry-point`**. Re-run **`force-sep2024`** (tool keeps that tree) or install an older build (Nov 2024 uses sniper webhelper, no steamrt). |
 | Crash / assert on startup | `./downgrade sync-steam <buildid>` then `./sep-steam` |
 | Wrong build after `force-wayback` | Wrong timestamp — see table above; reinstall with correct `cache/<buildid>` |
 | Wrong overlay md5 | Reinstall with `--overlay-md5 …` or `OVERLAY_MD5=…` on `force-wayback` |
 | Re-verify without wipe | `./downgrade force-sep2024 --skip-extract --cache-version-dir cache/<buildid>` |
+| Fetch **`fail=N`** / **INCOMPLETE cache** | **`fetch-smart`** or **`fetch-by-date YYYY-MM-DD`**; never run **`force-sep2024`** until **`status`** shows cache **complete** |
+| **`force-wayback` stopped after fetch errors** | Complete cache first (above), then **`force-sep2024 -y --cache-version-dir cache/<buildid>`** |
 
 ---
 
@@ -156,7 +207,8 @@ Check: **`./downgrade status`**. If update fails, see **`ls -dt ~/.steam/client_
 |---------|---------|
 | `./downgrade status` | Build id, overlay md5, `steam.cfg`, running processes |
 | `./downgrade list-cache` | Build ids under `cache/` |
-| `./downgrade force-wayback [-y] TS [manifest]` | Fetch + full install |
+| `./downgrade fetch-smart --wayback-date TS` | Wayback + optional SteamTracking/Fastly fallback |
+| `./downgrade force-wayback [-y] TS [manifest]` | **fetch-smart** + full install |
 | `./downgrade force-sep2024 [-y] [--cache-version-dir cache/BUILD]` | Install from cache (default `1726088054`) |
 | `./downgrade fetch --wayback-date TS --manifest …` | Download only |
 | `./downgrade sync-steam [buildid]` | Fix `ubuntu12_32/steam` from cache |
@@ -177,5 +229,7 @@ Check: **`./downgrade status`**. If update fails, see **`ls -dt ~/.steam/client_
 4. Local mirror extract (same idea as `-overridepackageurl` + `-forcepackagedownload`)
 5. Sync real **`ubuntu12_32/steam`** from `steam_ubuntu12.zip.vz`
 6. Write **`steam.cfg`**, create **`./sep-steam`**
+
+**2025+ clients:** **`steamwebhelper`** may need **`steamrt64/steam-runtime-steamrt/`**; the tool **keeps that subtree** when trimming **`steamrt64/`**. **2024-era** clients use **sniper** webhelper instead (no steamrt path).
 
 More context: [REFERENCES.md](REFERENCES.md).

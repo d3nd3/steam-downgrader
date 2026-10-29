@@ -14,6 +14,9 @@ case "$cmd" in
   fetch)
     exec "$PY" "$ROOT/fetch.py" --cache "$CACHE" "$@"
     ;;
+  fetch-smart)
+    exec "$PY" "$ROOT/fetch_smart.py" --cache "$CACHE" "$@"
+    ;;
   fetch-by-date)
     exec "$PY" "$ROOT/fetch_steamtracking.py" --cache "$CACHE" --date "${1:?YYYY-MM-DD}" "${@:2}"
     ;;
@@ -55,8 +58,8 @@ sync_steam_executable(Path('$STEAM_DIR'), Path('$CACHE/$VER'))
     shift
     MAN="${1:-steam_client_ubuntu12}"
     shift || true
-    echo "=== Fetch $MAN from Wayback $DATE ==="
-    "$PY" "$ROOT/fetch.py" --cache "$CACHE" --wayback-date "$DATE" --manifest "$MAN" --jobs 6 "$@"
+    echo "=== Fetch $MAN from Wayback $DATE (Fastly fallback if Archive gaps) ==="
+    "$PY" "$ROOT/fetch_smart.py" --cache "$CACHE" --wayback-date "$DATE" --manifest "$MAN" --jobs 6 "$@"
     VER=$("$PY" -c "
 from pathlib import Path
 from steam_manifest import load_manifest
@@ -135,8 +138,9 @@ steam_downgrader — manual downgrade toolkit (see README.md)
   ./downgrade status                    Show build, overlay md5, running Steam
   ./downgrade list-cache                List cached build ids under cache/
   ./downgrade verify-wayback [date]     Check archive has manifest names
+  ./downgrade fetch-smart --wayback-date TS   Wayback + Fastly fallback for missing blobs
   ./downgrade fetch --wayback-date TS --manifest steam_client_ubuntu12
-  ./downgrade force-wayback [-y] TS [manifest]   Fetch Wayback + destructive install
+  ./downgrade force-wayback [-y] TS [manifest]   fetch-smart + destructive install
   ./downgrade force-sep2024 [-y]         Sep 2024 preset (cache 1726088054)
   ./downgrade sync-steam [buildid]       Fix ubuntu12_32/steam from cache
   ./downgrade sep-2024                 Preset: Sep 2024 ubuntu12 fetch+install

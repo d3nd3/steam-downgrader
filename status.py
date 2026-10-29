@@ -78,9 +78,12 @@ def main() -> int:
 
     cache_root = ROOT / "cache"
     if cache_root.is_dir():
-        manifests = sorted(cache_root.glob("*/steam_client_ubuntu12.manifest"))
-        if manifests:
-            print("Local cache builds:", ", ".join(p.parent.name for p in manifests[-5:]))
+        from steam_manifest import cache_missing_artifacts
+
+        for manifest in sorted(cache_root.glob("*/steam_client_ubuntu12.manifest")):
+            miss = cache_missing_artifacts(manifest.parent)
+            tag = "complete" if not miss else f"INCOMPLETE ({len(miss)} missing)"
+            print(f"  cache/{manifest.parent.name}: {tag}")
     return 0
 
 

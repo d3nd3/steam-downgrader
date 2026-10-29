@@ -10,6 +10,9 @@ from steam_manifest import load_manifest
 
 
 def reset_package(steam_dir: Path, cache_dir: Path, manifest_basename: str = "steam_client_ubuntu12") -> None:
+    from steam_manifest import require_cache_complete
+
+    require_cache_complete(cache_dir, manifest_basename)
     manifest_name = f"{manifest_basename}.manifest"
     _, version, artifacts = load_manifest(cache_dir / manifest_name)
     pkg = steam_dir / "package"
