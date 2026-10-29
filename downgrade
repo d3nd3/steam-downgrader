@@ -1,0 +1,101 @@
+#!/usr/bin/env bash
+# steam_downgrader — manual Steam client downgrade helpers
+set -euo pipefail
+ROOT="$(cd "$(dirname "$0")" && pwd)"
+CACHE="$ROOT/cache"
+STEAM_DIR="${STEAM_DIR:-$HOME/.steam/debian-installation}"
+PY="${PYTHON:-python3}"
+export PYTHONPATH="$ROOT"
+
+cmd="${1:-help}"
+shift || true
+
+case "$cmd" in
+  fetch)
+    exec "$PY" "$ROOT/fetch.py" --cache "$CACHE" "$@"
+    ;;
+  fetch-by-date)
+    exec "$PY" "$ROOT/fetch_steamtracking.py" --cache "$CACHE" --date "${1:?YYYY-MM-DD}" "${@:2}"
+    ;;
+  install)
+    exec "$PY" "$ROOT/install.py" --steam-dir "$STEAM_DIR" "$@"
+    ;;
+  activate-pending)
+    exec "$PY" "$ROOT/activate.py" --steam-dir "$STEAM_DIR" "$@"
+    ;;
+  apply-mirror)
+    exec "$PY" "$ROOT/apply_mirror.py" --steam-dir "$STEAM_DIR" "$@"
+    ;;
+  force-sep2024)
+    exec "$PY" "$ROOT/force_sep2024.py" --steam-dir "$STEAM_DIR" "$@"
+    ;;
+  sync-steam)
+    exec "$PY" -c "
+from pathlib import Path
+from force_sep2024 import sync_steam_executable
+sync_steam_executable(Path('$STEAM_DIR'), Path('$CACHE/1726088054'))
+" "$@"
+    ;;
+  lock-updates)
+    cat >"$STEAM_DIR/steam.cfg" <<'EOF'
+BootStrapperInhibitAll=enable
+BootStrapperForceSelfUpdate=disable
+EOF
+    echo "wrote $STEAM_DIR/steam.cfg"
+    ;;
+  mirror)
+    exec "$PY" "$ROOT/mirror.py" "$@"
+    ;;
+  sep-2024)
+    DATE=20240913122103
+    MANIFEST=steam_client_ubuntu12
+    echo "=== Fetch Sep 2024 linux manifest ($MANIFEST) from Wayback $DATE ==="
+    "$PY" "$ROOT/fetch.py" --cache "$CACHE" --wayback-date "$DATE" --manifest "$MANIFEST" "$@"
+    VER=$("$PY" -c "
+from pathlib import Path
+from steam_manifest import load_manifest
+import sys
+d=Path('$CACHE')
+ms=sorted(d.glob('*/${MANIFEST}.manifest'), key=lambda p: p.stat().st_mtime)
+if not ms: sys.exit('no manifest in cache')
+_, v, _ = load_manifest(ms[-1])
+print(v)
+")
+    echo "=== Install cache/$VER into $STEAM_DIR ==="
+    echo "Stop Steam first. Press Enter to continue or Ctrl-C."
+    read -r
+    "$PY" "$ROOT/install.py" --cache-version-dir "$CACHE/$VER" \
+      --manifest-basename "$MANIFEST" --steam-dir "$STEAM_DIR"
+    ;;
+  verify-wayback)
+    DATE="${1:-20240913122103}"
+    for f in steam_client_steamrt64 steam_client_ubuntu12; do
+      code=$(curl -sS -o /dev/null -w '%{http_code}' -m 20 \
+        "http://web.archive.org/web/${DATE}if_/media.steampowered.com/client/${f}" || echo err)
+      echo "$DATE $f -> HTTP $code"
+    done
+    ;;
+  restore-current)
+    rm -f "$STEAM_DIR/steam.cfg" "$STEAM_DIR/../steam/steam.cfg" 2>/dev/null || true
+    echo "Removed steam.cfg. Run:"
+    echo "  steam -forcesteamupdate -forcepackagedownload -exitsteam"
+    ;;
+  help|*)
+    cat <<EOF
+steam_downgrader — manual downgrade toolkit (see README.md)
+
+  ./downgrade verify-wayback [date]     Check archive has manifest names
+  ./downgrade fetch --wayback-date TS --manifest steam_client_ubuntu12
+  ./downgrade force-sep2024              Destructive Sep 2024 install
+  ./downgrade sync-steam                 Fix ubuntu12_32/steam from cache
+  ./downgrade sep-2024                 Preset: Sep 2024 ubuntu12 fetch+install
+  ./downgrade install --cache-version-dir cache/VERSION --manifest-basename NAME
+  ./downgrade activate-pending          Before launch: drop steam.cfg, quarantine steamrt64
+  ./downgrade lock-updates              After downgrade succeeded
+  ./downgrade mirror --cache-version-dir cache/VERSION --port 8765
+  ./downgrade restore-current          Remove steam.cfg + print update command
+
+Env: STEAM_DIR (default ~/.steam/debian-installation)
+EOF
+    ;;
+esac

@@ -1,0 +1,6 @@
+__pycache__/
+*.py[cod]
+cache/
+package_backup_*/
+.venv/
+venv/
