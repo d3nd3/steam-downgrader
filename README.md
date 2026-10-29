@@ -1,5 +1,15 @@
 # steam-downgrader
 
+> **Warning — read before running anything**
+>
+> This tool **permanently replaces large parts of your Steam client** under `~/.steam/debian-installation` (or `$STEAM_DIR`). It deletes modern client trees (`steamrt64/`, `ubuntu12_*`, UI assets, `package/`, configs) and reinstalls an old build. **Your games in `steamapps/` are not removed**, but Steam may not launch correctly until you restore.
+>
+> - **Quit Steam completely** before `./downgrade force-sep2024` (including tray/background).
+> - **`force-sep2024` is destructive** — only client dirs are copied to `client_backup_*`; if backup or restore fails, you may need a full Steam reinstall.
+> - While downgraded, **start Steam only with `./sep-steam`**. Launching `/usr/games/steam` normally can pull the current client again or leave a broken mix of versions.
+> - To return to the current client: `./downgrade restore-current` then `steam -forcesteamupdate …` (see below). Until then, expect failed logins, crashes, or missing features.
+> - **Use at your own risk.** Intended for developers and overlay/regression work, not everyday gaming on your only Steam install.
+
 Linux toolkit to install a **Sep 2024** Steam client (`buildid` **1726088054**) from Wayback or SteamTracking — useful when you need the pre–SteamRT3 **`ubuntu12_32`** tree (overlay research, regression tests).
 
 ## Install
