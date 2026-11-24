@@ -1,0 +1,110 @@
+# steam-downgrader — system overview
+# A bash dispatcher over 13 small Python tools. The only durable things are
+# cache/<build>/, the client trees under ~/.steam, and the backups.
+# Zones run left to right: entry points -> core -> state -> external.
+# Style classes set strokes only, so light and dark stay readable.
+
+title: |md
+  # steam-downgrader
+  Installs an older Linux Steam client from a Wayback Machine snapshot (or SteamTracking) into `~/.steam/debian-installation`, then keeps it from self-updating.
+| {near: top-center}
+
+direction: right
+grid-columns: 2
+grid-rows: 2
+horizontal-gap: 200
+vertical-gap: 180
+
+entry: Entry points {
+  direction: down
+
+  cli: `./downgrade` · bash `case` dispatcher; one subcommand per Python tool
+  fw: `force-wayback TS` · fetch-smart, read the build id, then destructive install
+  fs: `force-sep2024` · install from a complete `cache/<build>` (default `1726088054`)
+  sep: `./sep-steam` · generated launcher: `STEAM_FORCE_CLIENT=ubuntu12_32` only
+  status: `status.py` · build id, overlay md5, update lock, running clients, per-cache completeness
+
+  fw -> fs: same install step, one fetch in front
+}
+
+state: State {
+  direction: down
+
+  cache: `cache/<buildid>/` · manifest + roughly 500 MB of blobs per build, gitignored {shape: cylinder}
+  package: `~/.steam/debian-installation/package/` · the blobs the Steam bootstrap is allowed to extract {shape: cylinder}
+  trees: client trees · `ubuntu12_32`, `ubuntu12_64`, `linux64`, `steamui`, `public` {shape: cylinder}
+  backups: `~/.steam/client_backup_*`, `package_backup_*` · client trees only, never `steamapps/` {shape: cylinder}
+  cfg: `steam.cfg` · `BootStrapperInhibitAll` + a second copy under `~/.steam/steam/` {shape: cylinder}
+  log: `logs/bootstrap_log.txt` · the "Update complete" line apply_mirror greps for {shape: cylinder}
+}
+
+core: Core {
+  direction: right
+  horizontal-gap: 110
+
+  fetchgrp: fetch → cache {
+    direction: down
+
+    manifest: `steam_manifest.py` · VDF-ish manifest → version + artifact list
+    fetch: `fetch.py` · parallel blob download, 3 retries, SHA-256
+    smart: `fetch_smart.py` · Wayback first, SteamTracking fill on failure
+    track: `fetch_steamtracking.py` · newest commit before a date
+
+    manifest -> fetch: the manifest decides what to download
+    fetch -> smart: smart only adds a fallback source
+    smart -> track: the fallback is a SteamTracking commit lookup
+  }
+
+  installgrp: install → client trees {
+    direction: down
+
+    nuke: `nuke_client.py` · back up client trees, then delete them
+    reset: `reset_package.py` · `package/` = exactly the cached blobs
+    mirror: `mirror.py` · cache on `127.0.0.1:8765/client`
+    apply: `apply_mirror.py` · steam `-overridepackageurl … -exitsteam`
+
+    nuke -> reset: wipe first, then stage
+    reset -> mirror: package/ is the mirror's source
+    mirror -> apply: mirror runs as a child for the one forced update
+  }
+
+  fixupgrp: fix the stub, then verify {
+    direction: down
+
+    vzip: `vzip.py` · Valve `.vz`: LZMA1 body, CRC32 + size footer
+    sync: `sync_steam_executable` · real `ubuntu12_32/steam` from the `.vz`
+    verify: `verify` · overlay md5, `steamclient.so` sha, build id
+
+    vzip -> sync: unpack `steam_ubuntu12.zip.vz`, not the zip
+    sync -> verify: a replaced stub is what verify checks for
+  }
+
+  fetchgrp -> installgrp: a complete cache is the precondition for wiping anything
+  installgrp -> fixupgrp: the extract can leave a bootstrap-era stub
+}
+
+ext: External {
+  direction: down
+
+  wayback: `web.archive.org` · `/web/<timestamp>if_/media.steampowered.com/client`
+  fastly: `client-update.fastly.steamstatic.com` · live CDN, same client file names
+  tracking: `SteamDatabase/SteamTracking` · GitHub API + raw manifest history
+  steam: `/usr/games/steam` · the real bootstrap: reads package/ + mirror, extracts, writes the log
+  proc: `pgrep` / `pkill` · refuses, or kills, while a client is still up
+}
+
+entry -> core: a subcommand picks the tool
+core -> state: writes cache, package/, launcher, backups
+ext -> core: manifests and blobs come back with a build id
+
+classes: {
+  entry: {style: {stroke: "#2f6fbf"}}
+  core: {style: {stroke: "#2f8f5f"}}
+  state: {style: {stroke: "#a86a12"; stroke-dash: 3}}
+  ext: {style: {stroke: "#8a4fbf"; stroke-dash: 5}}
+}
+
+entry.class: entry
+core.class: core
+state.class: state
+ext.class: ext

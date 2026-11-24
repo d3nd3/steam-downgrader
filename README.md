@@ -2,6 +2,8 @@
 
 Install an **older Linux Steam client** from the [Internet Archive Wayback Machine](https://web.archive.org/) (or SteamTracking) into `~/.steam/debian-installation`. Typical use: reproduce overlay bugs on a known build, then restore the current client.
 
+Prefer pictures? Start with **[HUMANS.md](HUMANS.md)**.
+
 > **Read this first**
 >
 > - **Quit Steam completely** (tray icon too) before any `force-*` command. Check with `./downgrade status`.
